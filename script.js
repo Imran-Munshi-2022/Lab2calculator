@@ -1,63 +1,133 @@
-const display = document.getElementById('display');
-let currentInput = '';
+const display = document.getElementById("display");
+let currentInput = "";
 
-// Append value
+/* ---------- Display ---------- */
+function updateDisplay() {
+  display.textContent = currentInput || "0";
+}
+
+/* ---------- Helpers ---------- */
+// returns the last number chunk after an operator
+function getLastNumberChunk(expr) {
+  const parts = expr.split(/[\+\-\*\/%]/);
+  return parts[parts.length - 1] ?? "";
+}
+
+/* ---------- Input ---------- */
 function appendValue(value) {
-  if (value === '.' && currentInput.includes('.')) return; // prevent multiple dots
+  // If Error shown, start fresh
+  if (display.textContent === "Error") currentInput = "";
+
+  // Prevent multiple dots in the CURRENT number only
+  if (value === ".") {
+    const lastChunk = getLastNumberChunk(currentInput);
+    if (lastChunk.includes(".")) return;
+    if (lastChunk === "") currentInput += "0"; // start as 0.
+  }
+
+  // Avoid starting with multiple operators
+  if (currentInput === "" && ["+", "*", "/", "%"].includes(value)) return;
+
   currentInput += value;
   updateDisplay();
 }
 
-// Clear display
 function clearDisplay() {
-  currentInput = '';
+  currentInput = "";
   updateDisplay();
 }
 
-// Delete last character
 function deleteLast() {
+  if (!currentInput) return;
   currentInput = currentInput.slice(0, -1);
   updateDisplay();
 }
 
-// Calculate result
+/* ---------- Calculation ---------- */
 function calculateResult() {
   try {
-    let expression = currentInput.replace(/×/g, '*').replace(/÷/g, '/').replace(/%/g, '/100');
-    let result = eval(expression);
-    currentInput = result.toString();
+    if (!currentInput) return;
+
+    // Allow only safe characters
+    if (!/^[0-9+\-*/().%\s]*$/.test(currentInput)) {
+      display.textContent = "Error";
+      currentInput = "";
+      return;
+    }
+
+    // Convert percentages: 50% => (50/100)
+    let expression = currentInput.replace(/(\d+(\.\d+)?)%/g, "($1/100)");
+
+    // Prevent ending with operator
+    if (/[+\-*/.]$/.test(expression)) {
+      display.textContent = "Error";
+      currentInput = "";
+      return;
+    }
+
+    // Evaluate
+    const result = Function(`"use strict"; return (${expression})`)();
+
+    if (!isFinite(result)) {
+      display.textContent = "Error";
+      currentInput = "";
+      return;
+    }
+
+    currentInput = Number(result.toFixed(10)).toString();
     updateDisplay();
   } catch (error) {
-    display.textContent = 'Error';
-    currentInput = '';
+    display.textContent = "Error";
+    currentInput = "";
   }
 }
 
-// Update display
-function updateDisplay() {
-  display.textContent = currentInput || '0';
-}
-
-// Temperature conversion
+/* ---------- Temperature Conversion ---------- */
 function convertTemp(type) {
   if (!currentInput) return;
-  let value = parseFloat(currentInput);
-  let result;
 
-  switch(type) {
-    case 'C2F': // Celsius to Fahrenheit
-      result = (value * 9/5) + 32;
-      break;
-    case 'F2C': // Fahrenheit to Celsius
-      result = (value - 32) * 5/9;
-      break;
-    case 'C2K': // Celsius to Kelvin
-      result = value + 273.15;
-      break;
-    default:
-      return;
+  // Conversion should only run when input is a pure number (not 5+2)
+  if (/[+\-*/%()]/.test(currentInput.trim())) {
+    display.textContent = "Error";
+    currentInput = "";
+    return;
   }
 
-  currentInput = result.toFixed(2); // round to 2 decimals
+  const value = parseFloat(currentInput);
+  if (isNaN(value)) return;
+
+  let result;
+
+  if (type === "C2F") {
+    result = (value * 9) / 5 + 32;
+  } else if (type === "F2C") {
+    result = ((value - 32) * 5) / 9;
+  } else if (type === "C2K") {
+    result = value + 273.15;
+  } else {
+    return;
+  }
+
+  currentInput = Number(result.toFixed(2)).toString();
   updateDisplay();
 }
+
+/* ---------- Keyboard Support (optional) ---------- */
+document.addEventListener("keydown", (e) => {
+  const k = e.key;
+
+  if ((k >= "0" && k <= "9") || k === ".") {
+    appendValue(k);
+  } else if (["+", "-", "*", "/"].includes(k)) {
+    appendValue(k);
+  } else if (k === "Enter" || k === "=") {
+    e.preventDefault();
+    calculateResult();
+  } else if (k === "Backspace") {
+    deleteLast();
+  } else if (k === "Escape") {
+    clearDisplay();
+  } else if (k === "%") {
+    appendValue("%");
+  }
+});
